@@ -1,122 +1,149 @@
 #include <Arduino.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include "freertos/task.h"
+#include <freertos/FreeRTOS.h>
+#include <WiFi.h>
+#include <esp_now.h>
 
-#define ARMA 25
-#define GATILHO 14
-#define RESET 26
-#define BALA1 32
-#define BALA2 33
-#define BALA3 27
-#define MAX_MUNICAO 3
+// ====== CONFIG ======
+#define TRIGGER_PIN 32
+#define RESET_PIN 33
+#define PWM_PIN 25
+#define BUZZER_PIN 26
+#define LED1_PIN 27
+#define LED2_PIN 14
+#define LED3_PIN 12
+#define LED4_PIN 13
+
+#define PWM_CHANNEL 0
+#define PWM_FREQ 27
+#define PWM_RESOLUTION 10 // 10 bits (0–1023)
+#define PWM_DUTY 512      // 50%
+
+#define MAX_MUNICAO 4
+
+uint8_t peerAddress[] = {
+  0xD4, 0xE9, 0xF4, 0xBC, 0x8E, 0xA4
+};
 
 int municao = MAX_MUNICAO;
-const int freq = 1200;
-const int resolution_bits = 12;
-const int channel = 0;
-const int duty = 2048;
+const TickType_t cooldownTicks = pdMS_TO_TICKS(1000);
 
-SemaphoreHandle_t xMunicaoMutex;
+TaskHandle_t xTriggerHandle, xResetHandle, xUpdateLedsHandle;
+SemaphoreHandle_t xMunicaoMutex;  
 
-TimerHandle_t xCooldownTimerHandle;
+void vTrigger(void *pvParams);
 
-TaskHandle_t xAtirarHandle, xResetarHandle, xAtualizarLedsHandle;
+void vReset(void *pvParams);
 
-void vAtirar(void *);
-void vResetar(void *);
-void vAtualizarLeds(void *);
+void vUpdateLeds(void *pvParams);
 
-void vCooldownTimerCallback(TimerHandle_t);
+void ARDUINO_ISR_ATTR isrTrigger(void);
 
-void ARDUINO_ISR_ATTR isrGatilho(void);
 void ARDUINO_ISR_ATTR isrReset(void);
+
+void OnDataRecv(const uint8_t *mac, const uint8_t *data, int len);
 
 void setup() {
   Serial.begin(9600);
+  // MAC ARMA D8:13:2A:74:28:BC
+  // MAC BARRACA D4:E9:F4:BC:8E:A4
 
-  attachInterrupt(GATILHO, isrGatilho, FALLING);
-  attachInterrupt(RESET, isrReset, FALLING);
-  pinMode(BALA1, OUTPUT);
-  pinMode(BALA2, OUTPUT);
-  pinMode(BALA3, OUTPUT);
+  WiFi.mode(WIFI_STA);
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Erro ao iniciar ESP-NOW");
+  }
 
-  ledcSetup(channel, freq, resolution_bits);
-  ledcAttachPin(ARMA, channel);
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(peerInfo.peer_addr, peerAddress, sizeof(peerAddress));
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+
+  if(esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Erro ao adicionar peer");
+  }
+
+  esp_now_register_recv_cb(OnDataRecv);
+
+  // Configura PWM
+  ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(PWM_PIN, PWM_CHANNEL);
+  /*
+  */
+  attachInterrupt(TRIGGER_PIN, isrTrigger, RISING);
+  attachInterrupt(RESET_PIN, isrReset, RISING);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(LED1_PIN, OUTPUT);
+  pinMode(LED2_PIN, OUTPUT);
+  pinMode(LED3_PIN, OUTPUT);
+  pinMode(LED4_PIN, OUTPUT);
 
   xMunicaoMutex = xSemaphoreCreateMutex();
 
-  xCooldownTimerHandle = xTimerCreate("TIRO_TIMER", pdMS_TO_TICKS(500), pdFALSE,
-                                      0, vCooldownTimerCallback);
+  xTaskCreate(vTrigger, "TASK_ATIRAR", 4096, NULL, 2, &xTriggerHandle);
+  xTaskCreate(vReset, "TASK_RESETAR", 4096, NULL, 1, &xResetHandle);
+  xTaskCreate(vUpdateLeds, "TASK_ATUALIZAR_LEDS", 4096, NULL, 1, &xUpdateLedsHandle);
 
-  xTaskCreate(vAtirar, "TASK_ATIRAR", 4096, NULL, 1, &xAtirarHandle);
-  xTaskCreate(vResetar, "TASK_RESETAR", 4096, NULL, 1, &xResetarHandle);
-  xTaskCreate(vAtualizarLeds, "TASK_ATUALIZAR_LEDS", 4096, NULL, 1,
-              &xAtualizarLedsHandle);
-
-  xTaskNotifyGive(xAtualizarLedsHandle);
+  xTaskNotifyGive(xUpdateLedsHandle);
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  // faz nada
 }
 
-void vAtirar(void *pvParams) {
-  for (;;) {
+void vTrigger(void *pvParams) {
+  TickType_t lastTriggerTick = 0;
+
+  while (true) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    vTaskDelay(pdMS_TO_TICKS(30));
 
-    if (digitalRead(GATILHO) == LOW &&
-        !xTimerIsTimerActive(xCooldownTimerHandle)) {
-
-      Serial.println("TASK_ATIRAR: GATILHO: " + String(digitalRead(GATILHO)));
-
+    if ((xTaskGetTickCount() - lastTriggerTick) > cooldownTicks) {
       bool podeAtirar = false;
 
       xSemaphoreTake(xMunicaoMutex, portMAX_DELAY);
       if (municao > 0) {
         municao--;
         podeAtirar = true;
+      } else {
+        const char msg[] = "ACABOU_MUNICAO";
+        esp_err_t result = esp_now_send(peerAddress, (uint8_t*)msg, strlen(msg) + 1);
+
+        if(result == ESP_OK)
+          Serial.println("Mensagem ACABOU_MUNICAO enviada");
+        else
+          Serial.println("Erro ao enviar ACABOU_MUNICAO");
       }
       xSemaphoreGive(xMunicaoMutex);
 
       if (podeAtirar) {
-        xTaskNotifyGive(xAtualizarLedsHandle);
-        
-        ledcWrite(channel, duty);
-        vTaskDelay(pdMS_TO_TICKS(200));
-        ledcWrite(channel, 0);
-        
-        Serial.println("COOLDOWN_TIMER: iniciou o timer");
-        xTimerStart(xCooldownTimerHandle, 0);
+        lastTriggerTick = xTaskGetTickCount();
+        xTaskNotifyGive(xUpdateLedsHandle);
+        digitalWrite(BUZZER_PIN, HIGH);
+        ledcWrite(PWM_CHANNEL, PWM_DUTY);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        digitalWrite(BUZZER_PIN, LOW);
+        ledcWrite(PWM_CHANNEL, 0);
       }
     }
   }
 }
 
-void vResetar(void *pvParams) {
-  for (;;) {
+void vReset(void *pvParams) {
+  TickType_t lastTriggerTick = 0;
+  
+  while (true) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    vTaskDelay(pdMS_TO_TICKS(30));
 
-    if (digitalRead(RESET) == LOW) {
-
-      Serial.println("TASK_RESETAR: RESET: " + String(digitalRead(RESET)));
-
+    if ((xTaskGetTickCount() - lastTriggerTick) > cooldownTicks) {
+      Serial.println("Regarregando");
       xSemaphoreTake(xMunicaoMutex, portMAX_DELAY);
       municao = MAX_MUNICAO;
       xSemaphoreGive(xMunicaoMutex);
-
-      ledcWrite(channel, 0);
-      
-      xTimerStop(xCooldownTimerHandle, 0);
-
-      xTaskNotifyGive(xAtualizarLedsHandle);
+      xTaskNotifyGive(xUpdateLedsHandle);
+      lastTriggerTick = xTaskGetTickCount();
     }
   }
 }
 
-void vAtualizarLeds(void *pvParams) {
+void vUpdateLeds(void *pvParams) {
   int copiaMunicao;
   for (;;) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -129,25 +156,35 @@ void vAtualizarLeds(void *pvParams) {
     Serial.println();
     
     switch (copiaMunicao) {
+    case 4:
+      digitalWrite(LED1_PIN, HIGH);
+      digitalWrite(LED2_PIN, HIGH);
+      digitalWrite(LED3_PIN, HIGH);
+      digitalWrite(LED4_PIN, HIGH);
+      break;
     case 3:
-      digitalWrite(BALA1, HIGH);
-      digitalWrite(BALA2, HIGH);
-      digitalWrite(BALA3, HIGH);
+      digitalWrite(LED1_PIN, HIGH);
+      digitalWrite(LED2_PIN, HIGH);
+      digitalWrite(LED3_PIN, HIGH);
+      digitalWrite(LED4_PIN, LOW);
       break;
     case 2:
-      digitalWrite(BALA1, HIGH);
-      digitalWrite(BALA2, HIGH);
-      digitalWrite(BALA3, LOW);
+      digitalWrite(LED1_PIN, HIGH);
+      digitalWrite(LED2_PIN, HIGH);
+      digitalWrite(LED3_PIN, LOW);
+      digitalWrite(LED4_PIN, LOW);
       break;
     case 1:
-      digitalWrite(BALA1, HIGH);
-      digitalWrite(BALA2, LOW);
-      digitalWrite(BALA3, LOW);
+      digitalWrite(LED1_PIN, HIGH);
+      digitalWrite(LED2_PIN, LOW);
+      digitalWrite(LED3_PIN, LOW);\
+      digitalWrite(LED4_PIN, LOW);
       break;
     case 0:
-      digitalWrite(BALA1, LOW);
-      digitalWrite(BALA2, LOW);
-      digitalWrite(BALA3, LOW);
+      digitalWrite(LED1_PIN, LOW);
+      digitalWrite(LED2_PIN, LOW);
+      digitalWrite(LED3_PIN, LOW);
+      digitalWrite(LED4_PIN, LOW);
       break;
     default:
       break;
@@ -155,19 +192,23 @@ void vAtualizarLeds(void *pvParams) {
   }
 }
 
-void vCooldownTimerCallback(TimerHandle_t) {
-  Serial.println("COOLDOWN_TIMER: acabou o timer");
-  Serial.println();
-}
-
-void ARDUINO_ISR_ATTR isrGatilho(void) {
+void ARDUINO_ISR_ATTR isrTrigger(void) {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  vTaskNotifyGiveFromISR(xAtirarHandle, &xHigherPriorityTaskWoken);
+  vTaskNotifyGiveFromISR(xTriggerHandle, &xHigherPriorityTaskWoken);
   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 void ARDUINO_ISR_ATTR isrReset(void) {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  vTaskNotifyGiveFromISR(xResetarHandle, &xHigherPriorityTaskWoken);
+  vTaskNotifyGiveFromISR(xResetHandle, &xHigherPriorityTaskWoken);
   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void OnDataRecv(const uint8_t *mac, const uint8_t *data, int len) {
+  char *text = (char*)data;
+  if (strcmp(text, "REGARREGAR") == 0) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    vTaskNotifyGiveFromISR(xResetHandle, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+  }
 }
