@@ -1,8 +1,7 @@
 #include <Arduino.h>
-#include <Display.h>
 #include <freertos/FreeRTOS.h>
-#include <WiFi.h>
-#include <esp_now.h>
+#include <Display.h>
+#include <EspNowManager.h>
 
 // ====== CONFIG ======
 #define TRIGGER_PIN 32
@@ -17,7 +16,7 @@
 
 #define MAX_MUNICAO 4
 
-uint8_t peerAddress[] = {
+uint8_t ESP_BARR_ADDR[] = {
   0xD4, 0xE9, 0xF4, 0xBC, 0x8E, 0xA4
 };
 
@@ -41,24 +40,8 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *data, int len);
 
 void setup() {
   Serial.begin(9600);
-  // MAC ARMA D8:13:2A:74:28:BC
-  // MAC BARRACA D4:E9:F4:BC:8E:A4
 
-  WiFi.mode(WIFI_STA);
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("Erro ao iniciar ESP-NOW");
-  }
-
-  esp_now_peer_info_t peerInfo = {};
-  memcpy(peerInfo.peer_addr, peerAddress, sizeof(peerAddress));
-  peerInfo.channel = 0;
-  peerInfo.encrypt = false;
-
-  if(esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Erro ao adicionar peer");
-  }
-
-  esp_now_register_recv_cb(OnDataRecv);
+  EspNowManager::init(ESP_BARR_ADDR, OnDataRecv);
 
   display.begin();
   display.showHello();
@@ -96,13 +79,7 @@ void vTrigger(void *pvParams) {
         municao--;
         podeAtirar = true;
       } else {
-        const char msg[] = "ACABOU_MUNICAO";
-        esp_err_t result = esp_now_send(peerAddress, (uint8_t*)msg, strlen(msg) + 1);
-
-        if(result == ESP_OK)
-          Serial.println("Mensagem ACABOU_MUNICAO enviada");
-        else
-          Serial.println("Erro ao enviar ACABOU_MUNICAO");
+        EspNowManager::sendOutOfAmno(ESP_BARR_ADDR);
       }
       xSemaphoreGive(xMunicaoMutex);
 
