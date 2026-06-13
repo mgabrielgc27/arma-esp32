@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Display.h>
 #include <freertos/FreeRTOS.h>
 #include <WiFi.h>
 #include <esp_now.h>
@@ -8,13 +9,9 @@
 #define RESET_PIN 33
 #define PWM_PIN 25
 #define BUZZER_PIN 26
-#define LED1_PIN 27
-#define LED2_PIN 14
-#define LED3_PIN 12
-#define LED4_PIN 13
 
 #define PWM_CHANNEL 0
-#define PWM_FREQ 27
+#define PWM_FREQ 25
 #define PWM_RESOLUTION 10 // 10 bits (0–1023)
 #define PWM_DUTY 512      // 50%
 
@@ -24,17 +21,17 @@ uint8_t peerAddress[] = {
   0xD4, 0xE9, 0xF4, 0xBC, 0x8E, 0xA4
 };
 
+Display display;
+
 int municao = MAX_MUNICAO;
 const TickType_t cooldownTicks = pdMS_TO_TICKS(1000);
 
-TaskHandle_t xTriggerHandle, xResetHandle, xUpdateLedsHandle;
-SemaphoreHandle_t xMunicaoMutex;  
+TaskHandle_t xTriggerHandle, xResetHandle;
+SemaphoreHandle_t xMunicaoMutex;
 
 void vTrigger(void *pvParams);
 
 void vReset(void *pvParams);
-
-void vUpdateLeds(void *pvParams);
 
 void ARDUINO_ISR_ATTR isrTrigger(void);
 
@@ -63,6 +60,9 @@ void setup() {
 
   esp_now_register_recv_cb(OnDataRecv);
 
+  display.begin();
+  display.showHello();
+
   // Configura PWM
   ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
   ledcAttachPin(PWM_PIN, PWM_CHANNEL);
@@ -71,18 +71,11 @@ void setup() {
   attachInterrupt(TRIGGER_PIN, isrTrigger, RISING);
   attachInterrupt(RESET_PIN, isrReset, RISING);
   pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(LED1_PIN, OUTPUT);
-  pinMode(LED2_PIN, OUTPUT);
-  pinMode(LED3_PIN, OUTPUT);
-  pinMode(LED4_PIN, OUTPUT);
 
   xMunicaoMutex = xSemaphoreCreateMutex();
 
   xTaskCreate(vTrigger, "TASK_ATIRAR", 4096, NULL, 2, &xTriggerHandle);
   xTaskCreate(vReset, "TASK_RESETAR", 4096, NULL, 1, &xResetHandle);
-  xTaskCreate(vUpdateLeds, "TASK_ATUALIZAR_LEDS", 4096, NULL, 1, &xUpdateLedsHandle);
-
-  xTaskNotifyGive(xUpdateLedsHandle);
 }
 
 void loop() {
@@ -115,7 +108,6 @@ void vTrigger(void *pvParams) {
 
       if (podeAtirar) {
         lastTriggerTick = xTaskGetTickCount();
-        xTaskNotifyGive(xUpdateLedsHandle);
         digitalWrite(BUZZER_PIN, HIGH);
         ledcWrite(PWM_CHANNEL, PWM_DUTY);
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -137,57 +129,7 @@ void vReset(void *pvParams) {
       xSemaphoreTake(xMunicaoMutex, portMAX_DELAY);
       municao = MAX_MUNICAO;
       xSemaphoreGive(xMunicaoMutex);
-      xTaskNotifyGive(xUpdateLedsHandle);
       lastTriggerTick = xTaskGetTickCount();
-    }
-  }
-}
-
-void vUpdateLeds(void *pvParams) {
-  int copiaMunicao;
-  for (;;) {
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-    xSemaphoreTake(xMunicaoMutex, portMAX_DELAY);
-    copiaMunicao = municao;
-    xSemaphoreGive(xMunicaoMutex);
-
-    Serial.println("TASK_ATUALIZAR_LED: Municao: " + String(copiaMunicao));
-    Serial.println();
-    
-    switch (copiaMunicao) {
-    case 4:
-      digitalWrite(LED1_PIN, HIGH);
-      digitalWrite(LED2_PIN, HIGH);
-      digitalWrite(LED3_PIN, HIGH);
-      digitalWrite(LED4_PIN, HIGH);
-      break;
-    case 3:
-      digitalWrite(LED1_PIN, HIGH);
-      digitalWrite(LED2_PIN, HIGH);
-      digitalWrite(LED3_PIN, HIGH);
-      digitalWrite(LED4_PIN, LOW);
-      break;
-    case 2:
-      digitalWrite(LED1_PIN, HIGH);
-      digitalWrite(LED2_PIN, HIGH);
-      digitalWrite(LED3_PIN, LOW);
-      digitalWrite(LED4_PIN, LOW);
-      break;
-    case 1:
-      digitalWrite(LED1_PIN, HIGH);
-      digitalWrite(LED2_PIN, LOW);
-      digitalWrite(LED3_PIN, LOW);\
-      digitalWrite(LED4_PIN, LOW);
-      break;
-    case 0:
-      digitalWrite(LED1_PIN, LOW);
-      digitalWrite(LED2_PIN, LOW);
-      digitalWrite(LED3_PIN, LOW);
-      digitalWrite(LED4_PIN, LOW);
-      break;
-    default:
-      break;
     }
   }
 }
