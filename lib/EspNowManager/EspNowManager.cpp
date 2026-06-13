@@ -2,7 +2,7 @@
 #include <WiFi.h>
 #include <esp_now.h>
 
-void EspNowManager::init(uint8_t *peerAddress, DataRecvCallback_t OnDataRecv)
+void EspNowManager::connect(const uint8_t *peerAddress, DataRecvCallback_t OnDataRecv)
 {
   WiFi.mode(WIFI_STA);
   if (esp_now_init() != ESP_OK)
@@ -23,10 +23,9 @@ void EspNowManager::init(uint8_t *peerAddress, DataRecvCallback_t OnDataRecv)
   esp_now_register_recv_cb(OnDataRecv);
 }
 
-void EspNowManager::sendOutOfAmno(uint8_t *peerAddress)
+void EspNowManager::sendMsg(const uint8_t *peerAddress, const uint8_t *data)
 {
-  const char msg[] = "ACABOU_MUNICAO";
-  esp_err_t result = esp_now_send(peerAddress, (uint8_t *)msg, strlen(msg) + 1);
+  esp_err_t result = esp_now_send(peerAddress, data, sizeof(data));
 
   if (result == ESP_OK)
     Serial.println("Mensagem ACABOU_MUNICAO enviada");

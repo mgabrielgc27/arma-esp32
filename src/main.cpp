@@ -16,7 +16,7 @@
 
 #define MAX_MUNICAO 4
 
-uint8_t ESP_BARR_ADDR[] = {
+const uint8_t ESP_BARR_ADDR[] = {
   0xD4, 0xE9, 0xF4, 0xBC, 0x8E, 0xA4
 };
 
@@ -41,7 +41,7 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *data, int len);
 void setup() {
   Serial.begin(9600);
 
-  EspNowManager::init(ESP_BARR_ADDR, OnDataRecv);
+  EspNowManager::connect(ESP_BARR_ADDR, OnDataRecv);
 
   display.begin();
   display.showHello();
@@ -72,6 +72,7 @@ void vTrigger(void *pvParams) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
     if ((xTaskGetTickCount() - lastTriggerTick) > cooldownTicks) {
+      Serial.println("Oi");
       bool podeAtirar = false;
 
       xSemaphoreTake(xMunicaoMutex, portMAX_DELAY);
@@ -79,7 +80,8 @@ void vTrigger(void *pvParams) {
         municao--;
         podeAtirar = true;
       } else {
-        EspNowManager::sendOutOfAmno(ESP_BARR_ADDR);
+        char msg[] = "ACABOU_MUNICAO";
+        EspNowManager::sendMsg(ESP_BARR_ADDR, (uint8_t*)msg);
       }
       xSemaphoreGive(xMunicaoMutex);
 

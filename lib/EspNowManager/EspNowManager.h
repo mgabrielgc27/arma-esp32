@@ -12,7 +12,7 @@ class EspNowManager
 private:
   
 public:
-  static void init(uint8_t* peerAddress, DataRecvCallback_t OnDataRecv);
+  static void connect(const uint8_t* peerAddress, DataRecvCallback_t OnDataRecv);
 
-  static void sendOutOfAmno(uint8_t* peerAddress);
+  static void sendMsg(const uint8_t *peerAddress, const uint8_t *data);
 };
