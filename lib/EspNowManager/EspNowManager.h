@@ -14,5 +14,5 @@ private:
 public:
   static void connect(const uint8_t* peerAddress, DataRecvCallback_t OnDataRecv);
 
-  static void sendMsg(const uint8_t *peerAddress, const uint8_t *data);
+  static void sendMsg(const uint8_t *peerAddress, const uint8_t *data, unsigned int len);
 };

@@ -25,4 +25,8 @@ public:
   void show();
 
   void showHello();
+
+  void drawBattery(int batteryPercent);
+  
+  void drawAmno(int amno);
 };
