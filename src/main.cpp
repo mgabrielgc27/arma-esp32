@@ -65,10 +65,10 @@ void vTrigger(void *pvParams) {
       xSemaphoreGive(xMunicaoMutex);
       
       if (canShoot) {
-        weapon.startShooting();
-        vTaskDelay(pdMS_TO_TICKS(100));
-        weapon.stopShooting();
         lastTriggerTick = xTaskGetTickCount();
+        weapon.startShooting();
+        vTaskDelay(pdMS_TO_TICKS(200));
+        weapon.stopShooting();
         display.drawAmno(amno-1);
       } else {
         char msg[] = "ACABOU_MUNICAO";
