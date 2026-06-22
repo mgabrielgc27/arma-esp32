@@ -5,9 +5,10 @@ typedef void (*isrFunc_t)(void);
 class Weapon
 {
 private:
-  const int TRIGGER_PIN = 5;
-  const int RELOAD_PIN = 4;
-  const int PWM_PIN = 19;
+  const int RELOAD_PIN = 33;
+  const int TRIGGER_PIN = 26;
+  const int BUZZER_PIN = 27;
+  const int PWM_PIN = 13;
   const int PWM_CHANNEL = 0;
   const int PWM_FREQ = 25;
   const int PWM_RESOLUTION = 10; // 10 bits (0–1023)

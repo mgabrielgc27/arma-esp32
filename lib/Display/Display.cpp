@@ -7,7 +7,7 @@ Display::Display()
 {
 }
 
-void Display::begin()
+void Display::init()
 {
   if (!oled.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR))
   {
@@ -49,8 +49,8 @@ void Display::showHello()
   oled.setTextColor(SSD1306_WHITE);
   oled.setCursor(0, 0);
 
-  oled.println("Hello World!");
-  oled.println("ESP32 + OOP");
+  oled.println("Arma ESP32");
+  oled.println("Sistemas Embarcados 2026.1");
 
   oled.display();
 }

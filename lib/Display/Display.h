@@ -14,7 +14,7 @@ private:
 public:
   Display();
 
-  void begin();
+  void init();
 
   void clear();
 
