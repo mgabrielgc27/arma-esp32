@@ -14,7 +14,7 @@ float Battery::getVoltage()
 {
     int raw = analogRead(ADC_PIN);
     float adcVoltage = ((float)raw / 4095.0f) * 3.3f;
-    return adcVoltage * DIVIDER_RATIO;
+    return adcVoltage * 2;
 }
 
 int Battery::getPercent()
@@ -24,8 +24,8 @@ int Battery::getPercent()
     if (voltage >= 4.2)
         return 100;
 
-    if (voltage <= 3.0)
+    if (voltage <= 2.5)
         return 0;
 
-    return (int)(((voltage - 3.0f) / (4.2f - 3.0f)) * 100.0f);
+    return (int)(((voltage - 2.5f) / (4.2f - 2.5f)) * 100.0f);
 }

@@ -5,8 +5,7 @@
 #include <Battery.h>
 #include <EspNowManager.h>
 
-const uint8_t ESP_BARR_ADDR[] = {
-    0xD4, 0xE9, 0xF4, 0xBC, 0x8E, 0xA4};
+const uint8_t ESP_BARR_ADDR[] = { 0xD4, 0xE9, 0xF4, 0xBC, 0x8E, 0xA4 };
 
 Display display;
 Weapon weapon;
@@ -129,11 +128,9 @@ void vBattery(void *pvParams)
       display.show();
 
       lastPercent = percent;
-
-      
     }
 
-    Serial.printf( "Bateria: %d%% (%.2fV)\n", percent, battery.getVoltage());
+    Serial.printf("Bateria: %d%% (%.2fV)\n", percent, battery.getVoltage());
 
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
